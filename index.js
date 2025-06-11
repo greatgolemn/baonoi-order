@@ -1,5 +1,5 @@
 
-// 📁 index.js (เฉพาะส่วน /api/order + GPT Prompt + Quick Reply จาก recipe_preset)
+// 📁 index.js – แก้ให้รองรับ OpenAI SDK v4+
 const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
@@ -8,7 +8,7 @@ const { saveOrderToSheet } = require('./sheets');
 const { replyMessage } = require('./messenger');
 const { notifyLine } = require('./line');
 const { loadOptions } = require('./optionLoader');
-const { Configuration, OpenAIApi } = require('openai');
+const OpenAI = require('openai');
 require('dotenv').config();
 
 const app = express();
@@ -30,7 +30,7 @@ function getNote(userId) {
   return sessions[userId]?.data?.note || '';
 }
 
-const openai = new OpenAIApi(new Configuration({ apiKey: process.env.OPENAI_API_KEY }));
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 async function askChatGPT(userMessage, userId) {
   const options = await loadOptions();
@@ -60,58 +60,15 @@ async function askChatGPT(userMessage, userId) {
     appendNote(userId, userMessage);
   }
 
-  const res = await openai.createChatCompletion({
+  const res = await openai.chat.completions.create({
     model: 'gpt-4o',
     messages: [
       { role: 'system', content: prompt }
     ]
   });
 
-  return res.data.choices[0].message.content;
+  return res.choices[0].message.content;
 }
-
-// ✅ สร้าง Quick Reply จากสูตรใน Sheet
-app.get('/api/quick-reply', async (req, res) => {
-  try {
-    const options = await loadOptions();
-    const recipes = options['recipe_preset'] || [];
-
-    const quickReplies = recipes.map((recipe) => ({
-      content_type: 'text',
-      title: recipe.substring(0, 20), // Messenger จำกัด 20 ตัวอักษร
-      payload: `RECIPE_${recipe}`
-    }));
-
-    res.json({
-      text: "เลือกสูตรไส้อั่วที่ต้องการเลยครับผม 👇",
-      quick_replies: quickReplies
-    });
-  } catch (err) {
-    console.error('❌ โหลด quick reply ไม่สำเร็จ:', err);
-    res.status(500).json({ status: 'error', message: err.message });
-  }
-});
-
-// ✅ สร้าง Quick Reply สำหรับประเภทสินค้า
-app.get('/api/quick-reply/product-type', (req, res) => {
-  const quickReplies = [
-    {
-      content_type: 'text',
-      title: 'พร้อมทาน',
-      payload: 'PRODUCT_READY'
-    },
-    {
-      content_type: 'text',
-      title: 'ซีลสุญญากาศ',
-      payload: 'PRODUCT_SEALED'
-    }
-  ];
-
-  res.json({
-    text: "เลือกประเภทสินค้าที่ต้องการเลยครับผม 👇",
-    quick_replies: quickReplies
-  });
-});
 
 app.post('/api/order', async (req, res) => {
   const order = req.body;

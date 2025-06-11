@@ -95,3 +95,7 @@ app.post('/api/order', async (req, res) => {
     res.status(500).json({ status: 'error', message: err.message });
   }
 });
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Baonoi Chatbot server running on port ${PORT}`);
+});

@@ -120,3 +120,28 @@ module.exports.replyMessage = async (psid, message) => {
     message: { text: message }
   });
 };
+app.post('/webhook', (req, res) => {
+  const body = req.body;
+
+  if (body.object === 'page') {
+    body.entry.forEach(entry => {
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
+
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const userMessage = webhookEvent.message.text;
+
+        askChatGPT(userMessage, senderId).then(reply => {
+          replyMessage(senderId, reply);
+        }).catch(err => {
+          console.error("GPT error:", err);
+          replyMessage(senderId, "ขออภัยครับ เกิดข้อผิดพลาด ลองใหม่อีกครั้งนะครับ");
+        });
+      }
+    });
+
+    res.status(200).send('EVENT_RECEIVED');
+  } else {
+    res.sendStatus(404);
+  }
+});

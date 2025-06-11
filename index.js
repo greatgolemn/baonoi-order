@@ -1,14 +1,14 @@
 
-// 📁 index.js – แก้ให้รองรับ OpenAI SDK v4+
+// 📁 index.js – บ่าวน้อยไส้อั่ว (ฉบับสมบูรณ์)
 const express = require('express');
 const bodyParser = require('body-parser');
 const path = require('path');
 const axios = require('axios');
+const OpenAI = require('openai');
 const { saveOrderToSheet } = require('./sheets');
 const { replyMessage } = require('./messenger');
 const { notifyLine } = require('./line');
 const { loadOptions } = require('./optionLoader');
-const OpenAI = require('openai');
 require('dotenv').config();
 
 const app = express();
@@ -36,11 +36,11 @@ async function askChatGPT(userMessage, userId) {
   const options = await loadOptions();
   const recipes = options['recipe_preset'] || [];
 
-  const prompt = `
+  const prompt = \`
 คุณคือบ่าวน้อยไส้อั่ว พูดจาน่ารักและสุภาพแบบเด็กผู้ชาย
 
 ตอนนี้บ่าวน้อยมีสูตรไส้อั่วให้เลือก 4 แบบ:
-- ${recipes.join('\n- ')}
+- \${recipes.join('\n- ')}
 
 ลูกค้าสามารถเลือกประเภทสินค้าได้ 2 แบบ:
 - พร้อมทาน
@@ -52,8 +52,8 @@ async function askChatGPT(userMessage, userId) {
 
 หากลูกค้าเลือกสูตรเรียบร้อยแล้ว ให้ถามต่อว่า "อยากได้แบบพร้อมทานหรือซีลสุญญากาศดีครับ?"
 
-ลูกค้าพิมพ์ว่า: "${userMessage}"
-  `;
+ลูกค้าพิมพ์ว่า: "\${userMessage}"
+  \`;
 
   if (!recipes.some(r => userMessage.includes(r)) &&
       !['พร้อมทาน', 'ซีลสุญญากาศ'].some(t => userMessage.includes(t))) {
@@ -62,14 +62,56 @@ async function askChatGPT(userMessage, userId) {
 
   const res = await openai.chat.completions.create({
     model: 'gpt-4o',
-    messages: [
-      { role: 'system', content: prompt }
-    ]
+    messages: [{ role: 'system', content: prompt }]
   });
 
   return res.choices[0].message.content;
 }
 
+// ✅ Facebook Webhook Verification
+app.get('/webhook', (req, res) => {
+  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('✅ Webhook verified!');
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+// ✅ Facebook Webhook Listener
+app.post('/webhook', async (req, res) => {
+  const body = req.body;
+
+  if (body.object === 'page') {
+    for (const entry of body.entry) {
+      const webhookEvent = entry.messaging[0];
+      const senderId = webhookEvent.sender.id;
+
+      if (webhookEvent.message && webhookEvent.message.text) {
+        const userMessage = webhookEvent.message.text;
+
+        try {
+          const reply = await askChatGPT(userMessage, senderId);
+          await replyMessage(senderId, reply);
+        } catch (err) {
+          console.error('❌ GPT Error:', err);
+          await replyMessage(senderId, "ขออภัยครับ เกิดข้อผิดพลาด ลองใหม่อีกครั้งนะครับ");
+        }
+      }
+    }
+
+    res.status(200).send('EVENT_RECEIVED');
+  } else {
+    res.sendStatus(404);
+  }
+});
+
+// ✅ รับออเดอร์จาก Webview
 app.post('/api/order', async (req, res) => {
   const order = req.body;
   const note = getNote(order.psid);
@@ -77,14 +119,14 @@ app.post('/api/order', async (req, res) => {
   try {
     await saveOrderToSheet({ ...order, note });
 
-    const msg = `บ่าวน้อยได้รับออเดอร์แล้วครับ ขอบคุณมาก ๆ เลยครับพี่ 🙏\n\n` +
-      `🥓 สูตร: ${order.recipe}\n` +
-      `📦 จำนวน: ${order.amount} โล\n` +
-      `🧊 ประเภทสินค้า: ${order.product_type}\n` +
-      `📍 รับที่: ${order.pickup_place}\n` +
-      `🕒 วันที่-เวลา: ${new Date(order.pickup_time).toLocaleString()}\n` +
-      `🚚 จัดส่งไปที่: ${order.address}` +
-      (note ? `\n📝 หมายเหตุ: ${note}` : '');
+    const msg = \`บ่าวน้อยได้รับออเดอร์แล้วครับ ขอบคุณมาก ๆ เลยครับพี่ 🙏\n\n\` +
+      \`🥓 สูตร: \${order.recipe}\n\` +
+      \`📦 จำนวน: \${order.amount} โล\n\` +
+      \`🧊 ประเภทสินค้า: \${order.product_type}\n\` +
+      \`📍 รับที่: \${order.pickup_place}\n\` +
+      \`🕒 วันที่-เวลา: \${new Date(order.pickup_time).toLocaleString()}\n\` +
+      \`🚚 จัดส่งไปที่: \${order.address}\` +
+      (note ? \`\n📝 หมายเหตุ: \${note}\` : '');
 
     await replyMessage(order.psid, msg);
     await notifyLine({ ...order, note });
@@ -95,53 +137,9 @@ app.post('/api/order', async (req, res) => {
     res.status(500).json({ status: 'error', message: err.message });
   }
 });
+
+// ✅ Start server on Render port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Baonoi Chatbot server running on port ${PORT}`);
-});
-app.get('/webhook', (req, res) => {
-  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
-
-  if (mode && token === VERIFY_TOKEN) {
-    console.log('✅ Webhook verified!');
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
-  }
-});
-module.exports.replyMessage = async (psid, message) => {
-  const url = `https://graph.facebook.com/v17.0/me/messages?access_token=${process.env.PAGE_ACCESS_TOKEN}`;
-  await axios.post(url, {
-    recipient: { id: psid },
-    message: { text: message }
-  });
-};
-app.post('/webhook', (req, res) => {
-  const body = req.body;
-
-  if (body.object === 'page') {
-    body.entry.forEach(entry => {
-      const webhookEvent = entry.messaging[0];
-      const senderId = webhookEvent.sender.id;
-
-      if (webhookEvent.message && webhookEvent.message.text) {
-        const userMessage = webhookEvent.message.text;
-
-        askChatGPT(userMessage, senderId).then(reply => {
-          replyMessage(senderId, reply);
-        }).catch(err => {
-          console.error("GPT error:", err);
-          replyMessage(senderId, "ขออภัยครับ เกิดข้อผิดพลาด ลองใหม่อีกครั้งนะครับ");
-        });
-      }
-    });
-
-    res.status(200).send('EVENT_RECEIVED');
-  } else {
-    res.sendStatus(404);
-  }
+  console.log('✅ Baonoi Chatbot server running on port ' + PORT);
 });

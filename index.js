@@ -113,3 +113,10 @@ app.get('/webhook', (req, res) => {
     res.sendStatus(403);
   }
 });
+module.exports.replyMessage = async (psid, message) => {
+  const url = `https://graph.facebook.com/v17.0/me/messages?access_token=${process.env.PAGE_ACCESS_TOKEN}`;
+  await axios.post(url, {
+    recipient: { id: psid },
+    message: { text: message }
+  });
+};
